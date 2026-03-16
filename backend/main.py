@@ -1,15 +1,16 @@
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import os, json
-load_dotenv(os.path.expanduser("~/whatsagent/.env"))
+load_dotenv()
 
 from ai_engine import ask_ai
 from tts import text_to_speech
 from notify import send_ntfy_alert
 
-app = FastAPI()
-STATE_FILE = os.path.expanduser("~/whatsagent/state.json")
+app = FastAPI(title="Luna AI Backend", description="Built by Arunachalam")
+STATE_FILE = "/tmp/state.json"
 
 def get_state():
     try:
@@ -31,11 +32,11 @@ class Message(BaseModel):
 def root():
     state = get_state()
     return {
-        "status": "Luna AI Agent Running",
-        "active": state["active"],
-        "ai":     "Luna AI",
-        "tts":    "Edge TTS",
-        "creator": "Arunachalam"
+        "name":    "Luna AI",
+        "status":  "running",
+        "active":  state["active"],
+        "creator": "Arunachalam",
+        "version": "1.0.0"
     }
 
 @app.get("/status")
@@ -52,10 +53,36 @@ def stop_agent():
     set_state(False)
     return {"status": "Luna is now stopped", "active": False}
 
+@app.get("/qr", response_class=HTMLResponse)
+def get_qr():
+    try:
+        with open("/tmp/qr.txt") as f:
+            qr_data = f.read().strip()
+        return f"""
+        <html>
+        <head><title>Luna AI — Scan QR</title></head>
+        <body style='background:#111;color:#0f0;font-family:monospace;padding:20px'>
+        <h2 style='color:#0ff'>Luna AI — WhatsApp QR Code</h2>
+        <p>Scan with WhatsApp → Linked Devices</p>
+        <div id='qr'></div>
+        <script src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'></script>
+        <script>
+        new QRCode(document.getElementById('qr'), {{
+            text: "{qr_data}",
+            width: 300, height: 300,
+            colorDark: "#000000", colorLight: "#ffffff"
+        }});
+        </script>
+        <p style='color:#888'>Refresh this page if QR expired</p>
+        </body></html>
+        """
+    except:
+        return "<html><body style='background:#111;color:#f00;padding:20px'><h2>No QR available</h2><p>Bot is already connected or still starting...</p></body></html>"
+
 @app.post("/process")
 async def process_message(data: Message):
     if not get_state()["active"]:
-        print(f"[Luna] Agent stopped — ignoring message from {data.pushname}")
+        print(f"[Luna] Stopped — ignoring {data.pushname}")
         return {"reply": None, "active": False}
 
     print(f"\n{'='*50}")
@@ -65,7 +92,6 @@ async def process_message(data: Message):
     result    = ask_ai(data.message, data.sender)
     ai_reply  = result["reply"]
     ai_source = result["source"]
-
     audio_path = await text_to_speech(ai_reply)
     send_ntfy_alert(data.pushname, data.message)
 

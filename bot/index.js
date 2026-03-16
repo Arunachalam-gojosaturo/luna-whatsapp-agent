@@ -2,14 +2,16 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const axios  = require('axios');
 const path   = require('path');
+const fs     = require('fs');
 
-const BACKEND_URL = 'http://localhost:8000/process';
-const AUDIO_PATH  = path.join(__dirname, '../audio/reply.mp3');
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000/process';
+const AUDIO_PATH  = path.join('/tmp', 'reply.mp3');
 
 const client = new Client({
-    authStrategy: new LocalAuth(),
+    authStrategy: new LocalAuth({ dataPath: '/tmp/.wwebjs_auth' }),
     puppeteer: {
         headless: true,
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
         protocolTimeout: 120000,
         args: [
             '--no-sandbox',
@@ -18,19 +20,21 @@ const client = new Client({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--single-process',
             '--disable-gpu'
         ]
     }
 });
 
 client.on('qr', (qr) => {
-    console.log('\n[Luna] Scan this QR code with WhatsApp:\n');
+    console.log('\n[Luna] QR Code — scan with WhatsApp:\n');
     qrcode.generate(qr, { small: true });
+    // Save QR so backend can serve it
+    try { fs.writeFileSync('/tmp/qr.txt', qr); } catch(e) {}
 });
 
 client.on('ready', () => {
     console.log('\n✅ Luna WhatsApp Bot Ready!\n');
+    try { fs.unlinkSync('/tmp/qr.txt'); } catch(e) {}
 });
 
 client.on('disconnected', (reason) => {
@@ -39,7 +43,6 @@ client.on('disconnected', (reason) => {
 });
 
 client.on('message', async (msg) => {
-    // Only reply to DMs
     if (msg.isGroupMsg) return;
     if (msg.from === 'status@broadcast') return;
     if (!msg.body || msg.body.trim() === '') return;
@@ -55,14 +58,12 @@ client.on('message', async (msg) => {
     try {
         const res = await axios.post(BACKEND_URL, payload, { timeout: 30000 });
 
-        // Agent is stopped — don't reply
         if (!res.data.active || !res.data.reply) {
-            console.log('[Luna] Agent is stopped — not replying');
+            console.log('[Luna] Agent stopped — not replying');
             return;
         }
 
-        const reply = res.data.reply;
-        await msg.reply(reply);
+        await msg.reply(res.data.reply);
         console.log('✅ Text reply sent');
 
         try {
