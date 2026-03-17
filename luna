@@ -1,0 +1,83 @@
+#!/bin/bash
+# Luna AI control CLI
+# Usage: ./luna [start|stop|status|logs|deploy|qr]
+
+GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+cmd="${1:-status}"
+
+case "$cmd" in
+  start)
+    echo -e "${CYAN}Starting Luna AI...${NC}"
+    systemctl --user start luna-backend luna-n8n
+    pm2 start ecosystem.config.js
+    echo -e "${GREEN}✓ All services started${NC}"
+    ;;
+  stop)
+    echo -e "${YELLOW}Stopping Luna AI...${NC}"
+    pm2 stop all
+    systemctl --user stop luna-backend luna-n8n
+    echo -e "${GREEN}✓ All services stopped${NC}"
+    ;;
+  restart)
+    echo -e "${CYAN}Restarting Luna AI...${NC}"
+    systemctl --user restart luna-backend
+    pm2 reload all
+    echo -e "${GREEN}✓ Restarted${NC}"
+    ;;
+  status)
+    echo -e "${CYAN}━━━ Luna AI Status ━━━${NC}"
+    echo -e "${GREEN}[systemd]${NC}"
+    systemctl --user status luna-backend --no-pager -l | grep -E "Active|running|failed"
+    systemctl --user status luna-n8n     --no-pager -l | grep -E "Active|running|failed"
+    echo -e "${GREEN}[pm2]${NC}"
+    pm2 list --no-color | grep -E "luna|online|stopped"
+    echo ""
+    echo -e "${GREEN}[endpoints]${NC}"
+    echo "  Backend:  http://localhost:8000"
+    echo "  n8n UI:   http://localhost:5678"
+    echo "  QR Code:  http://localhost:8000/qr"
+    ;;
+  logs)
+    service="${2:-backend}"
+    case "$service" in
+      backend)  journalctl --user -u luna-backend  -f --no-pager ;;
+      n8n)      journalctl --user -u luna-n8n      -f --no-pager ;;
+      bot)      pm2 logs luna-bot ;;
+      telegram) pm2 logs luna-telegram ;;
+      *)        echo "Usage: ./luna logs [backend|n8n|bot|telegram]" ;;
+    esac
+    ;;
+  deploy)
+    echo -e "${CYAN}Pulling latest code and restarting...${NC}"
+    git pull
+    systemctl --user restart luna-backend
+    pm2 reload all
+    echo -e "${GREEN}✓ Deployed!${NC}"
+    # Also trigger n8n deploy webhook to notify Telegram
+    curl -s -X POST http://localhost:5678/webhook/luna/deploy \
+         -H "Content-Type: application/json" \
+         -d '{"source":"cli"}' > /dev/null
+    ;;
+  qr)
+    echo -e "${CYAN}Open this URL to scan QR:${NC}"
+    echo "  http://localhost:8000/qr"
+    ;;
+  n8n)
+    echo -e "${CYAN}Opening n8n...${NC}"
+    echo "  http://localhost:5678"
+    xdg-open http://localhost:5678 2>/dev/null || echo "  Open the URL above in your browser"
+    ;;
+  *)
+    echo -e "${CYAN}Luna AI CLI${NC}"
+    echo "Usage: ./luna [command]"
+    echo ""
+    echo "  start      Start all services"
+    echo "  stop       Stop all services"
+    echo "  restart    Restart all services"
+    echo "  status     Show service status + endpoints"
+    echo "  logs       Follow logs (./luna logs [backend|n8n|bot|telegram])"
+    echo "  deploy     git pull + restart + notify Telegram"
+    echo "  qr         Show WhatsApp QR URL"
+    echo "  n8n        Open n8n UI"
+    ;;
+esac

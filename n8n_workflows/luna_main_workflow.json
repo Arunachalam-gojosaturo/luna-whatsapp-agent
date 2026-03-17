@@ -1,0 +1,131 @@
+{
+  "name": "Luna AI - Main Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "luna/message",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook: Receive Message",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "luna-message-webhook"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/process",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "sender",   "value": "={{ $json.body.sender }}" },
+            { "name": "message",  "value": "={{ $json.body.message }}" },
+            { "name": "pushname", "value": "={{ $json.body.pushname }}" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "name": "HTTP: FastAPI Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "name": "Respond to Bot",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=📨 *{{ $json.body.pushname }}*\n{{ $json.body.message }}\n\n💬 _Luna replied via {{ $json.ai_used }}_",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "name": "Telegram: Notify",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [680, 460],
+      "credentials": {
+        "telegramApi": { "id": "1", "name": "Telegram Luna" }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "luna/deploy",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Webhook: Deploy Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 560],
+      "webhookId": "luna-deploy-webhook"
+    },
+    {
+      "parameters": {
+        "command": "cd ~/whatsagent && git pull && systemctl --user restart luna-backend && pm2 reload all && echo 'Deployed!'"
+      },
+      "name": "Shell: Pull + Restart",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [460, 560]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🚀 *Luna AI Deployed!*\n✅ Services restarted.\n`{{ $json.stdout }}`",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "name": "Telegram: Deploy Notify",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [680, 560],
+      "credentials": {
+        "telegramApi": { "id": "1", "name": "Telegram Luna" }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "luna/control",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Webhook: Control",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 720],
+      "webhookId": "luna-control-webhook"
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:8000/{{ $json.body.action }}",
+        "sendBody": false,
+        "options": {}
+      },
+      "name": "HTTP: Start/Stop Luna",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 720]
+    }
+  ],
+  "connections": {
+    "Webhook: Receive Message":  { "main": [[{ "node": "HTTP: FastAPI Backend",  "type": "main", "index": 0 }]] },
+    "HTTP: FastAPI Backend":     { "main": [[{ "node": "Respond to Bot",         "type": "main", "index": 0 },
+                                             { "node": "Telegram: Notify",       "type": "main", "index": 0 }]] },
+    "Webhook: Deploy Trigger":   { "main": [[{ "node": "Shell: Pull + Restart",  "type": "main", "index": 0 }]] },
+    "Shell: Pull + Restart":     { "main": [[{ "node": "Telegram: Deploy Notify","type": "main", "index": 0 }]] },
+    "Webhook: Control":          { "main": [[{ "node": "HTTP: Start/Stop Luna",  "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "saveManualExecutions": true, "callerPolicy": "workflowsFromSameOwner" },
+  "tags": [{ "name": "luna-ai" }]
+}
