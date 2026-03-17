@@ -1,8 +1,11 @@
 import os
 from groq import Groq
 from dotenv import load_dotenv
+
+# Load environment variables from .env
 load_dotenv(os.path.expanduser("~/whatsagent/.env"))
 
+# Initialize the Groq client
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 LUNA_SYSTEM_PROMPT = """You are Luna — a smart, friendly AI assistant created by Arunachalam.
@@ -24,16 +27,20 @@ Always stay in character as Luna. Never say you are ChatGPT, Claude, or any othe
 
 def ask_groq(message: str, sender: str = "unknown") -> str:
     try:
+        # Make a request to the Groq API
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": LUNA_SYSTEM_PROMPT},
-                {"role": "user",   "content": message}
+                {"role": "user", "content": message}
             ],
             max_tokens=200
         )
+
+        # Get the reply from the response
         reply = response.choices[0].message.content
         print(f"[Luna AI] {reply}")
         return reply
     except Exception as e:
+        # Return an error message in case of failure
         return f"Hey! Luna here — having a little trouble right now. Try again in a moment!"
